@@ -67,10 +67,12 @@ else:
         mode: str = "ok",
         *,
         hook_policy: str = "prompt",
+        remove_branch_policy: str = "keep",
     ) -> subprocess.CompletedProcess[str]:
         env = self.env.copy()
         env["FAKE_WT_MODE"] = mode
         env["LUVUS_SETTING_HOOK_POLICY"] = hook_policy
+        env["LUVUS_SETTING_REMOVE_BRANCH_POLICY"] = remove_branch_policy
         return subprocess.run(
             [sys.executable, os.fspath(PROVIDER), operation],
             input=json.dumps(request),
@@ -169,9 +171,7 @@ else:
         self.assertNotIn("--no-hooks", self.argv())
 
     def test_remove_is_foreground_and_keeps_branch(self) -> None:
-        result = self.run_provider(
-            "remove", self.remove_request(), hook_policy="approve"
-        )
+        result = self.run_provider("remove", self.remove_request())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
         self.assertEqual(
@@ -186,6 +186,48 @@ else:
                 "--format=json",
             ],
         )
+
+    def test_remove_hook_policy_maps_to_worktrunk(self) -> None:
+        approved = self.run_provider(
+            "remove", self.remove_request(), hook_policy="approve"
+        )
+        self.assertEqual(approved.returncode, 0, approved.stderr)
+        self.assertEqual(self.argv()[:4], [
+            "-C", os.fspath(self.root / "repo with space"), "--yes", "remove"
+        ])
+        self.assertNotIn("--no-hooks", self.argv())
+
+        skipped = self.run_provider(
+            "remove", self.remove_request(), hook_policy="skip"
+        )
+        self.assertEqual(skipped.returncode, 0, skipped.stderr)
+        self.assertIn("--no-hooks", self.argv())
+        self.assertNotIn("--yes", self.argv())
+
+    def test_remove_can_delete_only_integrated_branches(self) -> None:
+        result = self.run_provider(
+            "remove",
+            self.remove_request(),
+            remove_branch_policy="delete_if_merged",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argv = self.argv()
+        self.assertNotIn("--no-delete-branch", argv)
+        self.assertNotIn("--force-delete", argv)
+        self.assertNotIn("-D", argv)
+
+    def test_remove_can_force_delete_branch(self) -> None:
+        result = self.run_provider(
+            "remove",
+            self.remove_request(),
+            remove_branch_policy="force_delete",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argv = self.argv()
+        self.assertIn("--force-delete", argv)
+        self.assertNotIn("--no-delete-branch", argv)
+        self.assertNotIn("--force", argv)
+        self.assertNotIn("-D", argv)
 
     def test_force_maps_only_to_dirty_worktree_force(self) -> None:
         result = self.run_provider("remove", self.remove_request(force=True))
@@ -203,6 +245,14 @@ else:
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unsupported Worktrunk hook policy", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_unknown_remove_branch_policy_is_rejected_before_worktrunk(self) -> None:
+        result = self.run_provider(
+            "remove", self.remove_request(), remove_branch_policy="always"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported Worktrunk branch removal policy", result.stderr)
         self.assertFalse(self.log.exists())
 
     def test_invalid_protocol_is_rejected_before_worktrunk(self) -> None:
@@ -246,6 +296,11 @@ else:
         self.assertIn('type = "enum"', manifest)
         self.assertIn('default = "prompt"', manifest)
         self.assertIn('options = ["prompt", "approve", "skip"]', manifest)
+        self.assertIn('key = "remove_branch_policy"', manifest)
+        self.assertIn('default = "keep"', manifest)
+        self.assertIn(
+            'options = ["keep", "delete_if_merged", "force_delete"]', manifest
+        )
         self.assertNotIn("[[panes]]", manifest)
         self.assertNotIn("[[actions]]", manifest)
         self.assertNotIn("approve-hooks", manifest)
@@ -254,12 +309,10 @@ else:
         failed = self.run_provider("create", self.create_request(), "fail")
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn("exited with code 7", failed.stderr)
-        self.assertIn("press Esc to close New Git Worktree", failed.stderr)
-        self.assertIn("never approves hooks or passes --yes", failed.stderr)
-        approval = "wt -C '{}' config approvals add".format(
-            os.fspath(self.root / "repo with space")
+        self.assertIn(
+            "Press Esc. Approve Worktrunk hooks, then retry.", failed.stderr
         )
-        self.assertIn(approval, failed.stderr)
+        self.assertNotIn("config approvals add", failed.stderr)
         self.assertEqual(failed.stdout, "")
 
         invalid = self.run_provider("create", self.create_request(), "invalid")

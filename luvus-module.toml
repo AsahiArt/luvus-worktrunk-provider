@@ -15,3 +15,10 @@ title = "Worktrunk hook policy"
 type = "enum"
 default = "prompt"
 options = ["prompt", "approve", "skip"]
+
+[[settings]]
+key = "remove_branch_policy"
+title = "Branch after worktree removal"
+type = "enum"
+default = "keep"
+options = ["keep", "delete_if_merged", "force_delete"]

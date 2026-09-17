@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import shlex
 import shutil
 import subprocess
 import sys
@@ -72,6 +71,13 @@ def hook_policy() -> str:
     return policy
 
 
+def remove_branch_policy() -> str:
+    policy = os.environ.get("LUVUS_SETTING_REMOVE_BRANCH_POLICY", "keep").lower()
+    if policy not in {"keep", "delete_if_merged", "force_delete"}:
+        raise ProviderError(f"unsupported Worktrunk branch removal policy: {policy!r}")
+    return policy
+
+
 def run_worktrunk(arguments: list[str], repository: Path) -> Any:
     command = [worktrunk_binary(), *arguments]
     try:
@@ -119,13 +125,8 @@ def create() -> None:
     except ProviderError as error:
         if policy != "prompt":
             raise
-        approval = "wt -C {} config approvals add".format(
-            shlex.quote(os.fspath(repository))
-        )
         raise ProviderError(
-            f"{error}. Luvus never approves hooks or passes --yes. If repository "
-            "hooks need approval, press Esc to close New Git Worktree, review "
-            f"the commands in a terminal, then retry: {approval}"
+            f"{error}. Press Esc. Approve Worktrunk hooks, then retry."
         ) from error
     if not isinstance(result, dict):
         raise ProviderError("Worktrunk switch result must be a JSON object")
@@ -144,10 +145,23 @@ def remove() -> None:
     if not repository.is_absolute() or not path.is_absolute():
         raise ProviderError("repository and path must be absolute paths")
 
-    arguments = ["-C", os.fspath(repository), "remove", os.fspath(path)]
+    hooks = hook_policy()
+    branches = remove_branch_policy()
+    arguments = ["-C", os.fspath(repository)]
+    if hooks == "approve":
+        arguments.append("--yes")
+    arguments.append("remove")
+    if hooks == "skip":
+        arguments.append("--no-hooks")
+    arguments.append(os.fspath(path))
     if force:
         arguments.append("--force")
-    arguments.extend(["--foreground", "--no-delete-branch", "--format=json"])
+    arguments.append("--foreground")
+    if branches == "keep":
+        arguments.append("--no-delete-branch")
+    elif branches == "force_delete":
+        arguments.append("--force-delete")
+    arguments.append("--format=json")
     result = run_worktrunk(arguments, repository)
     if not isinstance(result, list) or not any(
         isinstance(item, dict) and item.get("kind") == "worktree" for item in result

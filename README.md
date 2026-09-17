@@ -50,25 +50,37 @@ wt -C <repository> switch [--create] <branch> --no-cd --format=json
 
 ### Hook policy setting
 
-In **Settings → Modules → Worktrunk Worktrees**, **Worktrunk hook policy** controls project hooks during creation:
+In **Settings → Modules → Worktrunk Worktrees**, **Worktrunk hook policy** controls project hooks during creation and removal:
 
 | Policy | Worktrunk option | Behavior |
 | --- | --- | --- |
-| `prompt` | none | Default. Require prior interactive approval and show a recovery command if approval is missing. |
+| `prompt` | none | Default. Require prior interactive approval and show a short recovery hint if approval is missing. |
 | `approve` | `--yes` | Skip the approval prompt for this invocation and run repository-declared hooks. Use only with trusted repositories. |
 | `skip` | `--no-hooks` | Do not run lifecycle hooks for this creation. |
 
-The `approve` command is `wt -C <repository> --yes switch ...`; the `skip` command is `wt -C <repository> switch --no-hooks ...`. The policy affects creation only and is never added to removal.
+The `approve` commands place global `--yes` before `switch` or `remove`; the `skip` commands place `--no-hooks` after the subcommand. The policy never changes Luvus's per-request dirty-worktree `force` value.
+
+### Branch removal setting
+
+**Branch after worktree removal** controls whether Worktrunk may remove the branch:
+
+| Policy | Behavior |
+| --- | --- |
+| `keep` | Default. Pass `--no-delete-branch` and always retain the branch. |
+| `delete_if_merged` | Let Worktrunk delete the branch only when its safe integration checks pass. |
+| `force_delete` | Pass `--force-delete`, allowing Worktrunk to delete an unmerged branch. This can permanently discard unique commits. |
+
+`force_delete` is an explicit, provider-specific override of Luvus's normal branch-retention behavior. It is independent from `--force`: the latter only permits removal of a dirty worktree.
 
 Explicit removal maps to:
 
 ```text
-wt -C <repository> remove <path> [--force] --foreground --no-delete-branch --format=json
+wt -C <repository> [--yes] remove [--no-hooks] <path> [--force] --foreground [--no-delete-branch|--force-delete] --format=json
 ```
 
-Removal is foregrounded because Luvus verifies that the directory and Git worktree registration are gone before it updates workspace state. The branch is retained to match Luvus's existing `worktree.remove` contract. `force: true` affects dirty-worktree removal only; the module never passes Worktrunk's `--force-delete` option.
+Removal is foregrounded because Luvus verifies that the directory and Git worktree registration are gone before it updates workspace state. `force: true` affects dirty-worktree removal only. Branch handling follows **Branch after worktree removal**; only the explicit `force_delete` policy passes Worktrunk's `--force-delete` option.
 
-With the default `prompt` policy, the module does **not** pass `--yes` or `--no-hooks`. If Worktrunk requires approval for project hooks, press `Esc` to close **New Git Worktree**, run the copyable `wt -C <repository> config approvals add` command from the end of the error in a terminal, review every command, and retry creation. The module never edits `approvals.toml` or records approvals on your behalf.
+With the default `prompt` policy, the module does **not** pass `--yes` or `--no-hooks`. If Worktrunk requires approval for project hooks, the **New Git Worktree** error ends with: `Press Esc. Approve Worktrunk hooks, then retry.` The module never edits `approvals.toml` or records approvals on your behalf.
 
 ## Protocol
 
