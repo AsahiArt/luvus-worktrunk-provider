@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -64,6 +65,13 @@ def worktrunk_binary() -> str:
     return executable
 
 
+def hook_policy() -> str:
+    policy = os.environ.get("LUVUS_SETTING_HOOK_POLICY", "prompt").lower()
+    if policy not in {"prompt", "approve", "skip"}:
+        raise ProviderError(f"unsupported Worktrunk hook policy: {policy!r}")
+    return policy
+
+
 def run_worktrunk(arguments: list[str], repository: Path) -> Any:
     command = [worktrunk_binary(), *arguments]
     try:
@@ -96,11 +104,29 @@ def create() -> None:
     if not repository.is_absolute():
         raise ProviderError("repository must be an absolute path")
 
-    arguments = ["-C", os.fspath(repository), "switch"]
+    policy = hook_policy()
+    arguments = ["-C", os.fspath(repository)]
+    if policy == "approve":
+        arguments.append("--yes")
+    arguments.append("switch")
+    if policy == "skip":
+        arguments.append("--no-hooks")
     if not branch_exists:
         arguments.append("--create")
     arguments.extend([branch, "--no-cd", "--format=json"])
-    result = run_worktrunk(arguments, repository)
+    try:
+        result = run_worktrunk(arguments, repository)
+    except ProviderError as error:
+        if policy != "prompt":
+            raise
+        approval = "wt -C {} config approvals add".format(
+            shlex.quote(os.fspath(repository))
+        )
+        raise ProviderError(
+            f"{error}. Luvus never approves hooks or passes --yes. If repository "
+            "hooks need approval, press Esc to close New Git Worktree, review "
+            f"the commands in a terminal, then retry: {approval}"
+        ) from error
     if not isinstance(result, dict):
         raise ProviderError("Worktrunk switch result must be a JSON object")
     path = result.get("path")
@@ -108,18 +134,6 @@ def create() -> None:
         raise ProviderError("Worktrunk switch result did not contain an absolute path")
     json.dump({"path": path}, sys.stdout, separators=(",", ":"))
     sys.stdout.write("\n")
-
-
-def approve() -> NoReturn:
-    repository = Path(os.environ.get("LUVUS_WORKSPACE_CWD", ""))
-    if not repository.is_absolute() or not repository.is_dir():
-        raise ProviderError("approval requires an active workspace directory")
-    executable = worktrunk_binary()
-    arguments = [executable, "-C", os.fspath(repository), "config", "approvals", "add"]
-    try:
-        os.execv(executable, arguments)
-    except OSError as error:
-        raise ProviderError(f"could not open Worktrunk approval: {error}") from error
 
 
 def remove() -> None:
@@ -142,12 +156,10 @@ def remove() -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"approve", "create", "remove"}:
-        fail("usage: provider.py approve|create|remove")
+    if len(sys.argv) != 2 or sys.argv[1] not in {"create", "remove"}:
+        fail("usage: provider.py create|remove")
     try:
-        if sys.argv[1] == "approve":
-            approve()
-        elif sys.argv[1] == "create":
+        if sys.argv[1] == "create":
             create()
         else:
             remove()

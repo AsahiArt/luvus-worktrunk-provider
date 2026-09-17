@@ -48,6 +48,18 @@ wt -C <repository> switch [--create] <branch> --no-cd --format=json
 
 `--create` is included only when Luvus reports that the local branch does not already exist. Worktrunk chooses the checkout path from its normal configuration and runs its normal lifecycle hooks.
 
+### Hook policy setting
+
+In **Settings → Modules → Worktrunk Worktrees**, **Worktrunk hook policy** controls project hooks during creation:
+
+| Policy | Worktrunk option | Behavior |
+| --- | --- | --- |
+| `prompt` | none | Default. Require prior interactive approval and show a recovery command if approval is missing. |
+| `approve` | `--yes` | Skip the approval prompt for this invocation and run repository-declared hooks. Use only with trusted repositories. |
+| `skip` | `--no-hooks` | Do not run lifecycle hooks for this creation. |
+
+The `approve` command is `wt -C <repository> --yes switch ...`; the `skip` command is `wt -C <repository> switch --no-hooks ...`. The policy affects creation only and is never added to removal.
+
 Explicit removal maps to:
 
 ```text
@@ -56,13 +68,7 @@ wt -C <repository> remove <path> [--force] --foreground --no-delete-branch --for
 
 Removal is foregrounded because Luvus verifies that the directory and Git worktree registration are gone before it updates workspace state. The branch is retained to match Luvus's existing `worktree.remove` contract. `force: true` affects dirty-worktree removal only; the module never passes Worktrunk's `--force-delete` option.
 
-The module intentionally does **not** pass `--yes` or `--no-hooks`. If Worktrunk requires approval for project hooks, right-click the workspace and choose **Approve Worktrunk Hooks**, or open the interactive pane directly:
-
-```sh
-luvus module pane open asahiart.worktrunk approve-hooks --placement overlay
-```
-
-The pane runs Worktrunk's native `config approvals add` flow in the selected workspace. Review every command and confirm or reject it yourself. The module never passes `--yes`, edits `approvals.toml`, or approves repository commands on your behalf.
+With the default `prompt` policy, the module does **not** pass `--yes` or `--no-hooks`. If Worktrunk requires approval for project hooks, press `Esc` to close **New Git Worktree**, run the copyable `wt -C <repository> config approvals add` command from the end of the error in a terminal, review every command, and retry creation. The module never edits `approvals.toml` or records approvals on your behalf.
 
 ## Protocol
 

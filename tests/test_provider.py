@@ -40,9 +40,6 @@ if mode == "multi-remove":
     path = sys.argv[sys.argv.index("remove") + 1]
     print(json.dumps([{"kind": "branch", "branch": "topic"}, {"kind": "worktree", "path": path}]))
     raise SystemExit(0)
-if "approvals" in sys.argv:
-    print("interactive approval")
-    raise SystemExit(0)
 if "switch" in sys.argv:
     branch = sys.argv[sys.argv.index("switch") + 1]
     if branch == "--create":
@@ -64,10 +61,16 @@ else:
         self.temp.cleanup()
 
     def run_provider(
-        self, operation: str, request: dict[str, object], mode: str = "ok"
+        self,
+        operation: str,
+        request: dict[str, object],
+        mode: str = "ok",
+        *,
+        hook_policy: str = "prompt",
     ) -> subprocess.CompletedProcess[str]:
         env = self.env.copy()
         env["FAKE_WT_MODE"] = mode
+        env["LUVUS_SETTING_HOOK_POLICY"] = hook_policy
         return subprocess.run(
             [sys.executable, os.fspath(PROVIDER), operation],
             input=json.dumps(request),
@@ -100,46 +103,6 @@ else:
     def argv(self) -> list[str]:
         return json.loads(self.log.read_text())
 
-    def test_approval_execs_native_interactive_flow_without_yes(self) -> None:
-        env = self.env.copy()
-        env["LUVUS_WORKSPACE_CWD"] = os.fspath(self.root / "repo with space")
-        result = subprocess.run(
-            [sys.executable, os.fspath(PROVIDER), "approve"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-            check=False,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("interactive approval", result.stdout)
-        self.assertEqual(
-            self.argv(),
-            [
-                "-C",
-                os.fspath(self.root / "repo with space"),
-                "config",
-                "approvals",
-                "add",
-            ],
-        )
-        self.assertNotIn("--yes", self.argv())
-
-    def test_approval_requires_an_active_workspace(self) -> None:
-        env = self.env.copy()
-        env.pop("LUVUS_WORKSPACE_CWD", None)
-        result = subprocess.run(
-            [sys.executable, os.fspath(PROVIDER), "approve"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-            check=False,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("active workspace directory", result.stderr)
-        self.assertFalse(self.log.exists())
-
     def test_create_new_branch_translates_request_and_stdout(self) -> None:
         result = self.run_provider("create", self.create_request())
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -162,6 +125,42 @@ else:
             ],
         )
 
+    def test_create_can_approve_hook_prompts(self) -> None:
+        result = self.run_provider("create", self.create_request(), hook_policy="approve")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.argv(),
+            [
+                "-C",
+                os.fspath(self.root / "repo with space"),
+                "--yes",
+                "switch",
+                "--create",
+                "feature/with space",
+                "--no-cd",
+                "--format=json",
+            ],
+        )
+        self.assertNotIn("--no-hooks", self.argv())
+
+    def test_create_can_skip_hooks(self) -> None:
+        result = self.run_provider("create", self.create_request(), hook_policy="skip")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.argv(),
+            [
+                "-C",
+                os.fspath(self.root / "repo with space"),
+                "switch",
+                "--no-hooks",
+                "--create",
+                "feature/with space",
+                "--no-cd",
+                "--format=json",
+            ],
+        )
+        self.assertNotIn("--yes", self.argv())
+
     def test_create_existing_branch_omits_create(self) -> None:
         result = self.run_provider("create", self.create_request(branch_exists=True))
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -170,7 +169,9 @@ else:
         self.assertNotIn("--no-hooks", self.argv())
 
     def test_remove_is_foreground_and_keeps_branch(self) -> None:
-        result = self.run_provider("remove", self.remove_request())
+        result = self.run_provider(
+            "remove", self.remove_request(), hook_policy="approve"
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
         self.assertEqual(
@@ -195,6 +196,14 @@ else:
         self.assertNotIn("-D", argv)
         self.assertNotIn("--yes", argv)
         self.assertNotIn("--no-hooks", argv)
+
+    def test_unknown_hook_policy_is_rejected_before_worktrunk(self) -> None:
+        result = self.run_provider(
+            "create", self.create_request(), hook_policy="run-everything"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported Worktrunk hook policy", result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_invalid_protocol_is_rejected_before_worktrunk(self) -> None:
         request = self.create_request()
@@ -233,21 +242,43 @@ else:
         self.assertIn(
             'remove_command = ["python3", "provider.py", "remove"]', manifest
         )
-        self.assertIn('id = "approve-hooks"', manifest)
-        self.assertIn('command = ["python3", "provider.py", "approve"]', manifest)
-        self.assertIn('contexts = ["workspace"]', manifest)
-        self.assertIn("module pane open asahiart.worktrunk approve-hooks", manifest)
+        self.assertIn('key = "hook_policy"', manifest)
+        self.assertIn('type = "enum"', manifest)
+        self.assertIn('default = "prompt"', manifest)
+        self.assertIn('options = ["prompt", "approve", "skip"]', manifest)
+        self.assertNotIn("[[panes]]", manifest)
+        self.assertNotIn("[[actions]]", manifest)
+        self.assertNotIn("approve-hooks", manifest)
 
     def test_worktrunk_failure_and_invalid_json_are_actionable(self) -> None:
         failed = self.run_provider("create", self.create_request(), "fail")
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn("exited with code 7", failed.stderr)
+        self.assertIn("press Esc to close New Git Worktree", failed.stderr)
+        self.assertIn("never approves hooks or passes --yes", failed.stderr)
+        approval = "wt -C '{}' config approvals add".format(
+            os.fspath(self.root / "repo with space")
+        )
+        self.assertIn(approval, failed.stderr)
         self.assertEqual(failed.stdout, "")
 
         invalid = self.run_provider("create", self.create_request(), "invalid")
         self.assertNotEqual(invalid.returncode, 0)
         self.assertIn("returned invalid JSON", invalid.stderr)
         self.assertEqual(invalid.stdout, "")
+
+        yes_failed = self.run_provider(
+            "create", self.create_request(), "fail", hook_policy="approve"
+        )
+        self.assertNotEqual(yes_failed.returncode, 0)
+        self.assertIn("exited with code 7", yes_failed.stderr)
+        self.assertNotIn("New Git Worktree", yes_failed.stderr)
+        self.assertNotIn("config approvals add", yes_failed.stderr)
+        self.assertIn("--yes", self.argv())
+
+        remove_failed = self.run_provider("remove", self.remove_request(), "fail")
+        self.assertNotEqual(remove_failed.returncode, 0)
+        self.assertNotIn("New Git Worktree", remove_failed.stderr)
 
 
 if __name__ == "__main__":
