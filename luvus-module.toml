@@ -1,0 +1,10 @@
+id = "asahiart.worktrunk"
+name = "Worktrunk Worktrees"
+version = "0.1.0"
+min_luvus_version = "0.15.0"
+description = "Create and remove Luvus worktrees through Worktrunk."
+platforms = ["macos", "linux"]
+
+[worktree_provider]
+command = ["python3", "provider.py", "create"]
+remove_command = ["python3", "provider.py", "remove"]
