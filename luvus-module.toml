@@ -1,6 +1,6 @@
 id = "asahiart.worktrunk"
 name = "Worktrunk Worktrees"
-version = "0.1.0"
+version = "0.2.0"
 min_luvus_version = "0.15.0"
 description = "Create and remove Luvus worktrees through Worktrunk."
 platforms = ["macos", "linux"]
@@ -8,3 +8,15 @@ platforms = ["macos", "linux"]
 [worktree_provider]
 command = ["python3", "provider.py", "create"]
 remove_command = ["python3", "provider.py", "remove"]
+
+[[panes]]
+id = "approve-hooks"
+title = "Approve Worktrunk Hooks"
+placement = "overlay"
+command = ["python3", "provider.py", "approve"]
+
+[[actions]]
+id = "approve-hooks"
+title = "Approve Worktrunk Hooks"
+contexts = ["workspace"]
+command = ["sh", "-c", '"$LUVUS_BIN_PATH" module pane open asahiart.worktrunk approve-hooks --placement overlay']

@@ -40,6 +40,9 @@ if mode == "multi-remove":
     path = sys.argv[sys.argv.index("remove") + 1]
     print(json.dumps([{"kind": "branch", "branch": "topic"}, {"kind": "worktree", "path": path}]))
     raise SystemExit(0)
+if "approvals" in sys.argv:
+    print("interactive approval")
+    raise SystemExit(0)
 if "switch" in sys.argv:
     branch = sys.argv[sys.argv.index("switch") + 1]
     if branch == "--create":
@@ -96,6 +99,46 @@ else:
 
     def argv(self) -> list[str]:
         return json.loads(self.log.read_text())
+
+    def test_approval_execs_native_interactive_flow_without_yes(self) -> None:
+        env = self.env.copy()
+        env["LUVUS_WORKSPACE_CWD"] = os.fspath(self.root / "repo with space")
+        result = subprocess.run(
+            [sys.executable, os.fspath(PROVIDER), "approve"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("interactive approval", result.stdout)
+        self.assertEqual(
+            self.argv(),
+            [
+                "-C",
+                os.fspath(self.root / "repo with space"),
+                "config",
+                "approvals",
+                "add",
+            ],
+        )
+        self.assertNotIn("--yes", self.argv())
+
+    def test_approval_requires_an_active_workspace(self) -> None:
+        env = self.env.copy()
+        env.pop("LUVUS_WORKSPACE_CWD", None)
+        result = subprocess.run(
+            [sys.executable, os.fspath(PROVIDER), "approve"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("active workspace directory", result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_create_new_branch_translates_request_and_stdout(self) -> None:
         result = self.run_provider("create", self.create_request())
@@ -190,6 +233,10 @@ else:
         self.assertIn(
             'remove_command = ["python3", "provider.py", "remove"]', manifest
         )
+        self.assertIn('id = "approve-hooks"', manifest)
+        self.assertIn('command = ["python3", "provider.py", "approve"]', manifest)
+        self.assertIn('contexts = ["workspace"]', manifest)
+        self.assertIn("module pane open asahiart.worktrunk approve-hooks", manifest)
 
     def test_worktrunk_failure_and_invalid_json_are_actionable(self) -> None:
         failed = self.run_provider("create", self.create_request(), "fail")

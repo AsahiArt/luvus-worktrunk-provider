@@ -56,7 +56,13 @@ wt -C <repository> remove <path> [--force] --foreground --no-delete-branch --for
 
 Removal is foregrounded because Luvus verifies that the directory and Git worktree registration are gone before it updates workspace state. The branch is retained to match Luvus's existing `worktree.remove` contract. `force: true` affects dirty-worktree removal only; the module never passes Worktrunk's `--force-delete` option.
 
-The module intentionally does **not** pass `--yes` or `--no-hooks`. If Worktrunk requires approval for project hooks, run the interactive command it reports and review the hooks yourself. The module never approves or bypasses repository commands on your behalf.
+The module intentionally does **not** pass `--yes` or `--no-hooks`. If Worktrunk requires approval for project hooks, right-click the workspace and choose **Approve Worktrunk Hooks**, or open the interactive pane directly:
+
+```sh
+luvus module pane open asahiart.worktrunk approve-hooks --placement overlay
+```
+
+The pane runs Worktrunk's native `config approvals add` flow in the selected workspace. Review every command and confirm or reject it yourself. The module never passes `--yes`, edits `approvals.toml`, or approves repository commands on your behalf.
 
 ## Protocol
 

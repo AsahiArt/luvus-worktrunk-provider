@@ -110,6 +110,18 @@ def create() -> None:
     sys.stdout.write("\n")
 
 
+def approve() -> NoReturn:
+    repository = Path(os.environ.get("LUVUS_WORKSPACE_CWD", ""))
+    if not repository.is_absolute() or not repository.is_dir():
+        raise ProviderError("approval requires an active workspace directory")
+    executable = worktrunk_binary()
+    arguments = [executable, "-C", os.fspath(repository), "config", "approvals", "add"]
+    try:
+        os.execv(executable, arguments)
+    except OSError as error:
+        raise ProviderError(f"could not open Worktrunk approval: {error}") from error
+
+
 def remove() -> None:
     request = read_request("remove")
     repository = Path(require_string(request, "repository"))
@@ -130,10 +142,12 @@ def remove() -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"create", "remove"}:
-        fail("usage: provider.py create|remove")
+    if len(sys.argv) != 2 or sys.argv[1] not in {"approve", "create", "remove"}:
+        fail("usage: provider.py approve|create|remove")
     try:
-        if sys.argv[1] == "create":
+        if sys.argv[1] == "approve":
+            approve()
+        elif sys.argv[1] == "create":
             create()
         else:
             remove()
