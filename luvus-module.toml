@@ -1,7 +1,7 @@
 id = "asahiart.worktrunk"
 name = "Worktrunk Worktrees"
 version = "0.2.0"
-min_luvus_version = "0.15.0"
+min_luvus_version = "0.14.3"
 description = "Create and remove Luvus worktrees through Worktrunk."
 platforms = ["macos", "linux"]
 

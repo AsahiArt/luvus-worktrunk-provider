@@ -288,6 +288,7 @@ else:
     def test_manifest_declares_the_fixed_provider_commands(self) -> None:
         manifest = (ROOT / "luvus-module.toml").read_text()
         self.assertIn('id = "asahiart.worktrunk"', manifest)
+        self.assertIn('min_luvus_version = "0.14.3"', manifest)
         self.assertIn('command = ["python3", "provider.py", "create"]', manifest)
         self.assertIn(
             'remove_command = ["python3", "provider.py", "remove"]', manifest

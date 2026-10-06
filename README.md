@@ -4,16 +4,14 @@ A [Luvus](https://github.com/RizRiyz/luvus) module that delegates worktree creat
 
 ## Requirements
 
-- Luvus `0.15.0` or newer
+- Luvus `0.14.3` or newer
 - Python 3.9 or newer
 - Worktrunk (`wt`) available on `PATH` (tested with `v0.77.0`)
 - macOS or Linux
 
 ## Install
 
-The module targets the worktree-provider API proposed in [Luvus PR #387](https://github.com/RizRiyz/luvus/pull/387). Its manifest is conservatively gated to Luvus `0.15.0`; update this requirement if the API ships under a different release number.
-
-After that API is available in a Luvus release:
+The worktree-provider API from [Luvus PR #387](https://github.com/RizRiyz/luvus/pull/387) is available in [Luvus v0.14.3](https://github.com/RizRiyz/luvus/tree/v0.14.3). This module uses its version 1 creation and removal protocol.
 
 ```sh
 luvus module install AsahiArt/luvus-worktrunk-provider
@@ -85,6 +83,8 @@ With the default `prompt` policy, the module does **not** pass `--yes` or `--no-
 ## Protocol
 
 The fixed commands in `luvus-module.toml` read one versioned JSON request from stdin. Creation emits only the Luvus result object on stdout; removal is silent on success. Worktrunk diagnostics are inherited on stderr so Luvus can surface actionable errors.
+
+Luvus v0.14.3 uses built-in Git removal for identity-bound, confirmed UI deletions unless a provider opts into the identity-bound removal contract. This module does not opt in, so those deletions bypass Worktrunk and its removal policies.
 
 ## Development
 
